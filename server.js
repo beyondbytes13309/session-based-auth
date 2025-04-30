@@ -16,6 +16,8 @@ app.use(cookieParser())
 const USERS = new Map()
 const SESSIONS = new Map()
 USERS.set(1, {username: "emmar", password: "123"})
+const sessionExpiryCheckRate = 5 * 60 * 1000 // 5 minutes
+const sessionTime =  15 * 60 * 1000 // 15 minutes
 
 // Setup helper functions
 
@@ -24,7 +26,7 @@ function setupIDs(res, userID) {
     const sessionID = crypto.randomBytes(16).toString('hex')
     SESSIONS.set(sessionID, {
         "userID": userID,
-        "expiresAt": new Date(Date.now() + 1000*60*15) // 15 minutes
+        "expiresAt": new Date(Date.now() + sessionTime) // 15 minutes
     })
     return res.cookie('sessionID', sessionID, {
         secure: process.env.NODE_ENV === 'production',
@@ -73,7 +75,7 @@ app.get('/', (req, res) => {
 app.get('/profile', (req, res) => {
     const sessionStatus = hasExpired(req)
     if (sessionStatus.code == 'notexpired') {
-        return res.send("Hey", USERS.get(sessionStatus.userID).username)
+        return res.send("Hey" + USERS.get(sessionStatus.userID).username)
     }
 })
 
@@ -93,7 +95,7 @@ app.post('/register', async (req, res) => {
         return res.status(409).send("Username is already taken")
     } 
 
-    const userID = USERS.size
+    const userID = USERS.size+1
     USERS.set(userID, {
         "username": username,
         "password": await bcrypt.hash(password, 10)
@@ -163,4 +165,15 @@ app.use((req, res) => {
 
 
 
-app.listen(process.env.PORT, ()=> {console.log("Server is running...")})
+app.listen(process.env.PORT, ()=> {
+    console.log("Server is running...")
+    setInterval(()=> {
+        for (const [sessionid, session] of SESSIONS) {
+            const xpiresAt = session.expiresAt
+            if (xpiresAt < new Date(Date.now())) {
+                console.log(sessionid, session)
+                SESSIONS.delete(sessionid)
+            }
+        }
+    }, sessionExpiryCheckRate) 
+})
